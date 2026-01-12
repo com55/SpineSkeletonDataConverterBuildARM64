@@ -1,0 +1,72 @@
+name: Auto Build ARM64 for SpineSkeletonDataConverter
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Get Latest Tag from Upstream
+        id: upstream
+        run: |
+          UPSTREAM_TAG=$(curl -s https://api.github.com/repos/wang606/SpineSkeletonDataConverter/releases/latest | jq -r .tag_name)
+          if [ "$UPSTREAM_TAG" == "null" ]; then UPSTREAM_TAG="master"; fi
+          echo "tag=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
+
+      - name: Check if Release Already Exists
+        id: check_rel
+        run: |
+          # ตรวจสอบว่าใน repo ของเรามี tag นี้หรือยัง
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.upstream.outputs.tag }})
+          if [ "$HTTP_STATUS" == "200" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout Upstream Code
+        if: steps.check_rel.outputs.exists == 'false'
+        uses: actions/checkout@v4
+        with:
+          repository: wang606/SpineSkeletonDataConverter
+          ref: ${{ steps.upstream.outputs.tag }}
+
+      - name: Setup .NET
+        if: steps.check_rel.outputs.exists == 'false'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 6.0.x
+
+      - name: Build and Publish for Linux ARM64
+        if: steps.check_rel.outputs.exists == 'false'
+        run: |
+          PROJECT_PATH="SpineSkeletonDataConverter.csproj"
+          
+          dotnet publish $PROJECT_PATH \
+            -c Release \
+            -r linux-arm64 \
+            --self-contained true \
+            /p:PublishSingleFile=true \
+            /p:PublishTrimmed=false \
+            -o dist/arm64
+
+          cd dist/arm64
+          zip -r ../../SpineSkeletonDataConverter-Linux-ARM64.zip *
+
+      - name: Create/Update Release
+        if: steps.check_rel.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.upstream.outputs.tag }}
+          name: Release ${{ steps.upstream.outputs.tag }} (ARM64)
+          body: |
+            Automated build for Linux ARM64
+            Upstream: https://github.com/wang606/SpineSkeletonDataConverter
+          files: SpineSkeletonDataConverter-Linux-ARM64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
