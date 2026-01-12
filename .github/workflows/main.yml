@@ -63,7 +63,7 @@ jobs:
         with:
           tag_name: ${{ steps.upstream.outputs.tag }}
           name: Release ${{ steps.upstream.outputs.tag }} (ARM64)
-          body: "Weekly C++ Auto-built for Raspberry Pi 4B (ARM64)"
+          body: "Auto-built for Linux ARM64"
           files: SpineSkeletonDataConverter-Linux-ARM64.zip
           make_latest: true
         env:
