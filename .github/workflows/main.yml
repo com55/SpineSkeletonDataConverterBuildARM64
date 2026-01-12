@@ -45,9 +45,10 @@ jobs:
       - name: Build and Publish for Linux ARM64
         if: steps.check_rel.outputs.exists == 'false'
         run: |
-          PROJECT_PATH="SpineSkeletonDataConverter.csproj"
+          PROJECT_PATH=$(find . -name "*.csproj" -not -path "*/obj/*" -not -path "*/bin/*" | head -n 1)
+          echo "Found project at: $PROJECT_PATH"
           
-          dotnet publish $PROJECT_PATH \
+          dotnet publish "$PROJECT_PATH" \
             -c Release \
             -r linux-arm64 \
             --self-contained true \
@@ -55,8 +56,7 @@ jobs:
             /p:PublishTrimmed=false \
             -o dist/arm64
 
-          cd dist/arm64
-          zip -r ../../SpineSkeletonDataConverter-Linux-ARM64.zip *
+          cd dist/arm64 && zip -r ../../SpineSkeletonDataConverter-Linux-ARM64.zip *
 
       - name: Create/Update Release
         if: steps.check_rel.outputs.exists == 'false'
