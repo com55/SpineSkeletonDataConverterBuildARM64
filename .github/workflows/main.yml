@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  check-and-build:
+  build-arm64:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -26,38 +26,35 @@ jobs:
           ref: ${{ steps.upstream.outputs.tag }}
           path: 'source-code'
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 6.0.x
+      - name: Install Cross-Compiler for ARM64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake zip
 
-      - name: Build and Publish for Raspberry Pi (ARM64)
+      - name: Build Project for ARM64
         run: |
           cd source-code
+          mkdir build
+          cd build
           
-          TARGET=$(ls *.sln 2>/dev/null || find . -name "*.csproj" | head -n 1)
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
           
-          if [ -z "$TARGET" ]; then
-            echo "Error: Project file not found in $(pwd)"
-            ls -R
-            exit 1
-          fi
+          make -j$(nproc)
           
-          echo "Building target: $TARGET"
+          mkdir -p ../../dist/arm64
+          find . -maxdepth 1 -executable -type f -exec cp {} ../../dist/arm64/ \;
 
-          dotnet publish "$TARGET" \
-            -c Release \
-            -r linux-arm64 \
-            --self-contained true \
-            /p:PublishSingleFile=true \
-            -o ../dist/arm64
-
-          cd ..
+      - name: Package and Release
+        run: |
           if [ -d "dist/arm64" ]; then
             cd dist/arm64
             zip -r ../../SpineSkeletonDataConverter-Linux-ARM64.zip *
           else
-            echo "Error: Build output directory not found!"
+            echo "Build failed, no executable found."
             exit 1
           fi
 
@@ -66,7 +63,7 @@ jobs:
         with:
           tag_name: ${{ steps.upstream.outputs.tag }}
           name: Release ${{ steps.upstream.outputs.tag }} (ARM64)
-          body: "Weekly Auto-built ARM64 binary for Raspberry Pi 4B"
+          body: "Weekly C++ Auto-built for Raspberry Pi 4B (ARM64)"
           files: SpineSkeletonDataConverter-Linux-ARM64.zip
           make_latest: true
         env:
