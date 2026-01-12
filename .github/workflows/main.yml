@@ -4,11 +4,6 @@ on:
   schedule:
     - cron: '0 0 * * 0'
   workflow_dispatch:
-    inputs:
-      force_build:
-        description: 'Force build even if release exists?'
-        type: boolean
-        default: true
 
 jobs:
   check-and-build:
@@ -24,55 +19,54 @@ jobs:
           if [ "$UPSTREAM_TAG" == "null" ] || [ -z "$UPSTREAM_TAG" ]; then UPSTREAM_TAG="master"; fi
           echo "tag=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
 
-      - name: Check if Release Already Exists
-        id: check_rel
-        run: |
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.upstream.outputs.tag }})
-          
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "exists=false" >> $GITHUB_OUTPUT
-          elif [ "$HTTP_STATUS" == "200" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Checkout Upstream Code
-        if: steps.check_rel.outputs.exists == 'false'
         uses: actions/checkout@v4
         with:
           repository: wang606/SpineSkeletonDataConverter
           ref: ${{ steps.upstream.outputs.tag }}
-          fetch-depth: 0
+          path: 'source-code'
 
       - name: Setup .NET
-        if: steps.check_rel.outputs.exists == 'false'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 6.0.x
 
-      - name: Build and Publish for Linux ARM64
-        if: steps.check_rel.outputs.exists == 'false'
+      - name: Build and Publish for Raspberry Pi (ARM64)
         run: |
+          cd source-code
+          
           TARGET=$(ls *.sln 2>/dev/null || find . -name "*.csproj" | head -n 1)
-          echo "Building: $TARGET"
+          
+          if [ -z "$TARGET" ]; then
+            echo "Error: Project file not found in $(pwd)"
+            ls -R
+            exit 1
+          fi
+          
+          echo "Building target: $TARGET"
 
           dotnet publish "$TARGET" \
             -c Release \
             -r linux-arm64 \
             --self-contained true \
             /p:PublishSingleFile=true \
-            -o dist/arm64
+            -o ../dist/arm64
 
-          cd dist/arm64 && zip -r ../../SpineSkeletonDataConverter-Linux-ARM64.zip *
+          cd ..
+          if [ -d "dist/arm64" ]; then
+            cd dist/arm64
+            zip -r ../../SpineSkeletonDataConverter-Linux-ARM64.zip *
+          else
+            echo "Error: Build output directory not found!"
+            exit 1
+          fi
 
       - name: Create/Update Release
-        if: steps.check_rel.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.upstream.outputs.tag }}
           name: Release ${{ steps.upstream.outputs.tag }} (ARM64)
-          body: "Weekly Auto-built ARM64 binary for pberry Pi 4B"
+          body: "Weekly Auto-built ARM64 binary for Raspberry Pi 4B"
           files: SpineSkeletonDataConverter-Linux-ARM64.zip
           make_latest: true
         env:
