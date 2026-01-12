@@ -11,24 +11,6 @@ jobs:
       contents: write
 
     steps:
-      - name: Get Latest Tag from Upstream
-        id: upstream
-        run: |
-          UPSTREAM_TAG=$(curl -s https://api.github.com/repos/wang606/SpineSkeletonDataConverter/releases/latest | jq -r .tag_name)
-          if [ "$UPSTREAM_TAG" == "null" ]; then UPSTREAM_TAG="master"; fi
-          echo "tag=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
-
-      - name: Check if Release Already Exists
-        id: check_rel
-        run: |
-          # ตรวจสอบว่าใน repo ของเรามี tag นี้หรือยัง
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.upstream.outputs.tag }})
-          if [ "$HTTP_STATUS" == "200" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Checkout Upstream Code
         if: steps.check_rel.outputs.exists == 'false'
         uses: actions/checkout@v4
@@ -36,27 +18,42 @@ jobs:
           repository: wang606/SpineSkeletonDataConverter
           ref: ${{ steps.upstream.outputs.tag }}
 
+      - name: List Files (Debug)
+        if: steps.check_rel.outputs.exists == 'false'
+        run: ls -R
+
       - name: Setup .NET
         if: steps.check_rel.outputs.exists == 'false'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 6.0.x
 
-      - name: Build and Publish for Linux ARM64
+      - name: Build and Publish for Raspberry Pi (ARM64)
         if: steps.check_rel.outputs.exists == 'false'
         run: |
-          PROJECT_PATH=$(find . -name "*.csproj" -not -path "*/obj/*" -not -path "*/bin/*" | head -n 1)
-          echo "Found project at: $PROJECT_PATH"
+          TARGET=$(ls *.sln 2>/dev/null || ls SpineSkeletonDataConverter/*.csproj 2>/dev/null | head -n 1)
           
-          dotnet publish "$PROJECT_PATH" \
+          if [ -z "$TARGET" ]; then
+            echo "Error: Project file not found!"
+            exit 1
+          fi
+          
+          echo "Building target: $TARGET"
+
+          dotnet publish "$TARGET" \
             -c Release \
             -r linux-arm64 \
             --self-contained true \
             /p:PublishSingleFile=true \
-            /p:PublishTrimmed=false \
             -o dist/arm64
 
-          cd dist/arm64 && zip -r ../../SpineSkeletonDataConverter-Linux-ARM64.zip *
+          if [ -d "dist/arm64" ]; then
+            cd dist/arm64
+            zip -r ../../SpineSkeletonDataConverter-Linux-ARM64.zip *
+          else
+            echo "Error: Build output directory not found!"
+            exit 1
+          fi
 
       - name: Create/Update Release
         if: steps.check_rel.outputs.exists == 'false'
